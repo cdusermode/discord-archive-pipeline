@@ -1,162 +1,174 @@
-# Sentinel Vault 🛡️
-> **Discord Archive Ingestion, Static Security Quarantine & Dual Storage Engine**
+# Sentinel Vault
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![UI: Dear PyGui](https://img.shields.io/badge/UI-Dear%20PyGui%20(ImGui)-indigo.svg)](https://github.com/hoffstadt/DearPyGui)
+> **Automated Discord Archive Scraper, Static Threat Quarantine & Dual Storage Engine**
 
-Sentinel Vault is an automated software ingestion, static security triage, and telemetry archive tool. It monitors Discord servers, scans released archives (`.zip`, `.rar`, `.7z`, `.tar`, `.gz`, `.dll`, `.sys`, `.exe`) in real time, quarantines embedded threats (token stealers, grabbers, hidden webhooks, malicious droppers), and stores sanitized releases in an organized taxonomy—either on **Local Disk** or in **Google Drive**.
+Sentinel Vault is an automated tool that connects to your Discord servers, downloads software archives (`.zip`, `.rar`, `.7z`, `.dll`, `.sys`, `.exe`), analyzes their contents for malware, and neatly organizes them into a structured taxonomy on your **Local Disk** or in **Google Drive**.
+
+Everything runs directly on your computer through a native **ImGui Dark Mode** dashboard.
 
 ---
 
 ## Key Features
 
-- **Native ImGui Dark Dashboard**: Powered by [Dear PyGui](https://github.com/hoffstadt/DearPyGui) with standard ASCII typography (zero emoji/glyph glitching), real-time HUD telemetry, dark slate styling, and color-coded live logs.
-- **Dual-Mode Storage Engine**:
-  - **Local Disk (Default & Recommended)**: Store files directly in clean hierarchical game/tool directories on any local disk without cloud accounts or third-party CLI dependencies.
-  - **Google Drive (Optional)**: Automatically provisions cloud directories and uploads files via the `gdrive` CLI with zero local disk footprint.
-- **Deep Static Threat Quarantine**:
-  - In-archive scanning for hardcoded Discord webhooks (`api/webhooks/...`).
-  - Detection of Telegram C2 tokens, token grabbers (`BlankGrabber`, `W4SP`, `Lumma`, `RedLine`), and credential harvesting patterns (`CryptUnprotectData`, `Login Data`, `Cookies`).
-  - Detection of obfuscated PowerShell, `certutil`, `bitsadmin`, and script droppers.
-  - Automatic isolation into `Quarantine/` and safe renaming with `.quarantined` suffix.
-- **Multi-Game Taxonomy & Dedicated Tool Matrix**:
-  - Automatically identifies projects for Fortnite, Counter-Strike 2, CS:GO, Rust, GTA V / FiveM, Roblox, Minecraft Java/Bedrock, Rainbow Six Siege, and more.
-  - Strict separation of External cheats into **Kernel** and **UserMode**.
-  - Dedicated sections for **Tools/Drivers/** (EAC, BattlEye, Vanguard) and **Tools/Mappers/** (KDMapper, VDM, DrvMap).
-- **Content Hash Deduplication**: Calculates SHA-256 signatures for every candidate release to eliminate duplicate downloads and redundant disk usage.
+- **Modern ImGui Dashboard**: Built with [Dear PyGui](https://github.com/hoffstadt/DearPyGui) for high-performance desktop rendering, color-coded live logs, and zero glyph/emoji glitches.
+- **Dual Storage Options**:
+  - **Local Disk (Default)**: Store files directly into clean game/tool folders on your drive. No cloud account or external tools required.
+  - **Google Drive (Optional)**: Automatically mirror your organized vault to Google Drive via the official `gdrive` CLI.
+- **In-Archive Threat Quarantine**:
+  - Unpacks and statically inspects `.zip`, `.rar`, `.7z`, and `.tar` archives in memory before saving.
+  - Detects hidden Discord webhooks, Telegram C2 tokens, token grabbers (BlankGrabber, W4SP, Lumma, RedLine), credential theft routines, and malicious PowerShell droppers.
+  - Automatically renames infected files with a `.quarantined` extension into `Quarantine/`.
+- **Hybrid AI & Heuristic Classification**:
+  - Automatically identifies games (Fortnite, Counter-Strike 2, Rust, Roblox, etc.) and separates projects into `External/Kernel/`, `External/UserMode/`, `Internal/DLL/`, and `Internal/Injectors/`.
+  - Dedicated sections for `Tools/Drivers/` (EAC, BattlEye, Vanguard) and `Tools/Mappers/` (KDMapper, VDM, DrvMap).
+- **Duplicate Prevention**: SHA-256 hash checks prevent redundant downloads and save storage space.
 
 ---
 
-## Architecture Overview
+## AI & Classification Engine: How it Works
+
+Sentinel Vault uses a **2-stage classification system** so it works out of the box without requiring paid API keys:
+
+```
+[ Discord Attachment ]
+          │
+          ▼
+[ Static Threat Scanner ] ──(Threat Found)──► [ Quarantine/ (*.quarantined) ]
+          │ (Clean)
+          ▼
+{ Is AI Enabled in GUI? }
+  ├──► YES: Uses LLM (Gemini / OpenAI / Ollama) to analyze folder tree & context
+  └──► NO:  Uses Built-in Offline Signature Analyzer (AST, .sys detection, class names)
+          │
+          ▼
+[ Clean Vault Storage: Local Disk or Google Drive ]
+```
+
+### 1. Offline Signature Engine (100% Free & Zero-Config)
+By default, Sentinel Vault scans archive contents for known engineering signatures:
+- **Drivers & Mappers**: Detects `DriverEntry`, `IoCreateDevice`, `kdmapper`, `vdm`, `drvmap`, etc.
+- **Game Signatures**: Detects Unreal Engine / Source 2 symbols (`UWorld`, `dwLocalPlayerPawn`, `BasePlayer`).
+- **Cheat Architecture**: Automatically groups code into `Kernel`, `UserMode`, `DLL`, or `Injectors`.
+
+### 2. Optional Neural AI Classifier
+If enabled in the **Security & Automation** tab, Sentinel Vault can consult an AI model for ambiguous repositories:
+- **Google Gemini API (Free Tier)**: Recommended model `gemini-1.5-flash` or `gemini-2.0-flash`. Very fast and completely free for personal use.
+- **OpenAI**: Supports `gpt-4o-mini` or any standard chat model.
+- **Local Ollama (Offline)**: Use offline open-weight models (`llama3`, `mistral`, `deepseek-r1`) via `http://localhost:11434`.
+
+---
+
+## Source Code & Project Structure
+
+All modules are documented and self-contained in the `core/` and `ui/` directories:
 
 ```
 sentinel-vault/
 ├── config/
-│   └── config.template.json    # Sanitized configuration template
+│   └── config.template.json    # Default template (no personal secrets)
 ├── core/
-│   ├── discord_client.py       # Discord REST API client with auto 429 rate-limit backoff
-│   ├── security_scanner.py     # Static AST, byte, and archive threat scanner
-│   ├── triage_engine.py        # Multi-game and tool taxonomy classifier
-│   ├── storage_manager.py      # Dual-mode storage engine (Local Disk & Google Drive)
-│   └── pipeline_runner.py      # Threaded orchestrator with real-time UI event callbacks
+│   ├── discord_client.py       # Multi-server Discord client with 429 rate-limit backoff
+│   ├── security_scanner.py     # In-archive static threat scanner & AST regex rules
+│   ├── triage_engine.py        # 2-layer taxonomy sorter (Games, Drivers, Mappers)
+│   ├── ai_classifier.py        # Neural LLM integration (Gemini, OpenAI, Ollama)
+│   ├── storage_manager.py      # Dual-mode engine (Local Disk & Google Drive)
+│   └── pipeline_runner.py      # Multi-threaded background orchestrator
 ├── ui/
-│   └── imgui_dashboard.py      # Native Dear PyGui ImGui dashboard
-├── app.py                      # Main entry point (GUI or --cli headless)
-├── requirements.txt            # Python dependencies
-├── .gitignore                  # Prevents accidental credential/token commits
+│   └── imgui_dashboard.py      # Dear PyGui dark-mode desktop interface
+├── app.py                      # Main application entry point (GUI or --cli)
+├── start_discord_scan.bat      # 1-click portable Windows starter
+├── requirements.txt            # Python package dependencies
 └── README.md
 ```
 
 ---
 
-## Quickstart
+## Beginner Guide: Installation & Setup
 
-### 1. Prerequisites
-- Python 3.10, 3.11, or 3.12
-- Git
+### Step 1: Install Python
+1. Download Python 3.10 or newer from [python.org](https://www.python.org/downloads/).
+2. **Important**: When installing on Windows, check the box **"Add python.exe to PATH"**.
 
-### 2. Installation
+### Step 2: Download the Project
+Open PowerShell or Command Prompt:
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/sentinel-vault.git
+git clone https://github.com/<YOUR-USERNAME>/sentinel-vault.git
 cd sentinel-vault
+```
+*(Alternatively, click the green **Code -> Download ZIP** button on GitHub and extract the folder).*
 
-# Install dependencies
+### Step 3: Install Dependencies
+Run this single command to install Dear PyGui:
+```bash
 pip install -r requirements.txt
 ```
 
-### 3. Launching the ImGui Dashboard
+### Step 4: Start the Dashboard
+Double-click `start_discord_scan.bat` or run:
 ```bash
 python app.py
 ```
 
-### 4. Running Headless (CLI Mode)
-For servers, cron jobs, or headless container environments:
-```bash
-python app.py --cli
-```
-
 ---
 
-## Using the ImGui Interface
+## Quickstart: How to Run Your First Scan
 
-1. **Discord Configuration**:
-   - Paste your Discord authorization token in the password-masked field.
-   - Paste the Server (Guild) IDs you wish to monitor into the multi-line text box (one ID per line).
-   - Adjust the message history depth slider (50 to 2,000 messages per channel).
-2. **Select Storage Target**:
-   - **Local Disk**: Select a destination directory (e.g. `D:/MyVault` or `./vault_storage`) using the **Browse...** button.
-   - **Google Drive**: Select Google Drive mode and enter your Google account email and optional root folder ID.
-3. **Security Rules**:
-   - In-Archive Threat Scanning and Content Deduplication are enabled by default.
-4. **Execution**:
+1. **Tab 1: Discord Credentials & Targets**:
+   - Paste your Discord Authorization Token into the masked field (click **Test Token** to verify).
+   - Paste one or more **Discord Server IDs** into the servers box (one ID per line).
+   - Choose how many past messages to scan per channel (default: 500).
+2. **Tab 2: Storage Target**:
+   - Select **Local Disk Directory** and click **Browse...** to pick any folder on your PC (e.g. `C:/MyVault`).
+   - *(Optional)* Choose Google Drive if you use the `gdrive` CLI.
+3. **Tab 3: Security & AI (Optional)**:
+   - Threat scanning is active by default.
+   - If you want AI categorization, check **Enable AI Neural Categorization**, pick **Gemini API**, and enter your free Gemini key.
+4. **Tab 4: Ingestion Console**:
    - Click **`START PIPELINE`**.
-   - Monitor live progress in the color-coded console and real-time metric cards.
-   - Click **`Open Vault`** at any time to inspect your organized local files in Windows Explorer.
+   - Watch real-time downloads, scanner verdicts, and clean sorting in the console.
+   - Click **`Open Vault`** at any time to open your sorted folders in Windows Explorer.
 
 ---
 
-## Stored Directory Taxonomy
+## Vault Directory Layout
 
-When running in **Local Disk** mode, your chosen directory is organized automatically:
+Files are automatically organized cleanly:
 
 ```
-<Local_Storage_Path>/
+Vault_Storage/
 ├── Games/
 │   ├── Fortnite/
-│   │   ├── External/
-│   │   │   ├── Kernel/
-│   │   │   └── UserMode/
-│   │   └── Internal/
-│   │       ├── DLL/
-│   │       └── Injectors/
+│   │   ├── External/ (Kernel / UserMode)
+│   │   └── Internal/ (DLL / Injectors)
 │   ├── CounterStrike_CS2/
-│   │   ├── External/
-│   │   │   ├── Kernel/
-│   │   │   └── UserMode/
-│   │   └── Internal/
-│   │       ├── DLL/
-│   │       └── Injectors/
-│   ├── CounterStrike_CSGO/
-│   │   ├── External/
-│   │   └── Internal/
-│   └── Rust/
-│       ├── External/
-│       │   ├── Kernel/
-│       │   └── UserMode/
-│       └── Internal/
+│   │   ├── External/ (Kernel / UserMode)
+│   │   └── Internal/ (DLL / Injectors)
+│   ├── Rust/
+│   ├── Roblox/
+│   └── Grand_Theft_Auto_V/
 ├── Tools/
-│   ├── Drivers/             <-- Dedicated kernel drivers (EAC, BE, Vanguard, General)
-│   ├── Mappers/             <-- Dedicated mappers (KDMapper, VDM, DrvMap)
-│   ├── Injectors/           <-- Standalone injectors
-│   └── Dumpers/             <-- Offset / SDK / Schema dumpers
+│   ├── Drivers/             # Kernel drivers (EAC, BattlEye, Vanguard)
+│   ├── Mappers/             # Mappers (KDMapper, VDM, DrvMap)
+│   ├── Injectors/           # Standalone DLL injectors
+│   └── Dumpers/             # Offsets, SDK & Schema dumpers
 ├── Spoofer/
-│   └── Universal/
-│       ├── Temp/
-│       └── Perm/
+│   └── Universal/ (Temp / Perm)
 ├── Other/
-│   ├── Cheats/
-│   │   ├── External/
-│   │   │   ├── Kernel/
-│   │   │   └── UserMode/
-│   │   └── Internal/
-│   │       └── DLL/
 │   └── Utilities/
 └── Quarantine/
-    ├── Detected_Viruses/    (*.quarantined)
-    └── Suspicious_Stealers/ (*.quarantined)
+    ├── Detected_Viruses/    # Dangerous archives (*.quarantined)
+    └── Suspicious_Stealers/ # Token grabbers & webhooks (*.quarantined)
 ```
 
 ---
 
-## Security & Privacy Notice
+## Privacy & Security
 
-- **Zero Hardcoded Secrets**: This repository contains no hardcoded credentials, API keys, or Discord tokens.
-- **Git Protection**: Your private configuration (`config/config.json`) and local vaults are explicitly listed in `.gitignore` to prevent leaking credentials.
-- **Authorized Use**: This software is intended for local security research, personal archive curation, and malware analysis in controlled environments.
+- **Zero Hardcoded Secrets**: This repository does not contain any pre-configured tokens, server IDs, or API keys.
+- **Git Protected**: Private user settings (`config/config.json`) and downloaded storage folders are excluded via `.gitignore` to prevent accidental commits.
 
 ---
 
 ## License
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
