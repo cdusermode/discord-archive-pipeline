@@ -1,0 +1,43 @@
+{
+  "discord": {
+    "token": "",
+    "servers": [],
+    "history_depth": 500,
+    "skip_channel_keywords": [
+      "rules",
+      "guidelines",
+      "rule",
+      "ticket",
+      "tickets",
+      "welcome",
+      "verify",
+      "verification",
+      "faq",
+      "voice",
+      "bot-commands",
+      "cat-pics",
+      "memes",
+      "partners",
+      "honeypot",
+      "clowns"
+    ]
+  },
+  "storage": {
+    "mode": "local",
+    "local_path": "./vault_storage",
+    "gdrive": {
+      "account": "",
+      "root_folder_id": ""
+    }
+  },
+  "security": {
+    "enable_static_scanner": true,
+    "auto_quarantine": true,
+    "quarantine_suffix": ".quarantined",
+    "deduplicate_sha256": true
+  },
+  "webhook": {
+    "enabled": false,
+    "url": "http://localhost:5678/webhook/discord/source-eval"
+  }
+}

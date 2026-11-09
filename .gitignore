@@ -1,0 +1,55 @@
+# User Configuration & API Secrets
+config/config.json
+.env
+.env.*
+
+# Local Vault Storage & Downloads
+vault_storage/
+vault_storage_local/
+*.quarantined
+*.rar
+*.zip
+*.7z
+*.tar
+*.gz
+*.dll
+*.sys
+*.exe
+sentinel_tmp_*
+
+# Cache & State Ledgers
+vault_ledger.json
+folder_cache.json
+uploaded_ledger.json
+drive/uploaded_ledger.json
+drive/folder_cache.json
+active_files_catalog.json
+clean_catalog.json
+utilities_scan.json
+
+# Python & Environment
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Operating System & IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+Thumbs.db
+Desktop.ini
+
+# Legacy Migration Artifacts
+.legacy_internal_tools/
