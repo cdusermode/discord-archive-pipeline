@@ -47,6 +47,7 @@ def load_app_config() -> Dict[str, Any]:
         "discord": {"token": "", "servers": [], "history_depth": 500, "skip_channel_keywords": []},
         "storage": {"mode": "local", "local_path": "./vault_storage", "gdrive": {"account": "", "root_folder_id": ""}},
         "security": {"enable_static_scanner": True, "auto_quarantine": True, "quarantine_suffix": ".quarantined", "deduplicate_sha256": True},
+        "ai": {"enabled": False, "provider": "gemini", "api_key": "", "model": "gemini-1.5-flash", "ollama_url": "http://localhost:11434"},
         "webhook": {"enabled": False, "url": "http://localhost:5678/webhook/discord/source-eval"}
     }
 
@@ -165,6 +166,19 @@ class ImGuiDashboard:
 
         history_depth = int(dpg.get_value("slider_history")) if dpg.does_item_exist("slider_history") else 500
 
+        # AI Neural Classifier Configuration
+        ai_enabled = dpg.get_value("check_ai_enabled") if dpg.does_item_exist("check_ai_enabled") else False
+        ai_provider_sel = dpg.get_value("combo_ai_provider") if dpg.does_item_exist("combo_ai_provider") else "Gemini API (Free Tier)"
+        ai_provider = "gemini"
+        if "OpenAI" in ai_provider_sel:
+            ai_provider = "openai"
+        elif "Ollama" in ai_provider_sel:
+            ai_provider = "ollama"
+
+        ai_key = dpg.get_value("input_ai_key").strip() if dpg.does_item_exist("input_ai_key") else ""
+        ai_model = dpg.get_value("input_ai_model").strip() if dpg.does_item_exist("input_ai_model") else "gemini-1.5-flash"
+        ai_ollama_url = dpg.get_value("input_ollama_url").strip() if dpg.does_item_exist("input_ollama_url") else "http://localhost:11434"
+
         webhook_enabled = dpg.get_value("check_webhook") if dpg.does_item_exist("check_webhook") else False
         webhook_url = dpg.get_value("input_webhook_url").strip() if dpg.does_item_exist("input_webhook_url") else ""
 
@@ -175,6 +189,15 @@ class ImGuiDashboard:
         self.config["storage"]["local_path"] = local_path
         self.config["storage"]["gdrive"]["account"] = gdrive_account
         self.config["storage"]["gdrive"]["root_folder_id"] = gdrive_root
+
+        if "ai" not in self.config:
+            self.config["ai"] = {}
+        self.config["ai"]["enabled"] = ai_enabled
+        self.config["ai"]["provider"] = ai_provider
+        self.config["ai"]["api_key"] = ai_key
+        self.config["ai"]["model"] = ai_model
+        self.config["ai"]["ollama_url"] = ai_ollama_url
+
         self.config["webhook"]["enabled"] = webhook_enabled
         self.config["webhook"]["url"] = webhook_url
 
@@ -504,37 +527,84 @@ class ImGuiDashboard:
                             dpg.add_spacing(count=2)
                             dpg.add_text("THREAT SIGNATURES DETECTED", color=(108, 175, 255))
                             dpg.add_separator()
-                            dpg.add_text("• Discord Webhook Extraction (api/webhooks/...)")
-                            dpg.add_text("• Telegram Bot C2 Tokens (api.telegram.org/bot...)")
-                            dpg.add_text("• Token Grabbers (BlankGrabber, W4SP, Lumma, RedLine)")
-                            dpg.add_text("• Credential Stealers (CryptUnprotectData, Login Data, Cookies)")
-                            dpg.add_text("• Malicious Droppers (PowerShell -enc, certutil, bitsadmin)")
-
-                        # Right Box: n8n & External Webhooks
-                        with dpg.child_window(width=480, height=440, border=True):
-                            dpg.add_text("N8N / EXTERNAL AUTOMATION (OPTIONAL)", color=(108, 175, 255))
-                            dpg.add_separator()
-                            dpg.add_text("Sentinel Vault operates 100% self-contained without n8n.", color=(52, 211, 153))
-                            dpg.add_text("External automation is entirely optional and only needed", color=(160, 170, 185))
-                            dpg.add_text("if you wish to relay event notifications to Discord/Telegram.", color=(160, 170, 185))
+                            dpg.add_text("- Discord Webhook Extraction (api/webhooks/...)")
+                            dpg.add_text("- Telegram Bot C2 Tokens (api.telegram.org/bot...)")
+                            dpg.add_text("- Token Grabbers (BlankGrabber, W4SP, Lumma, RedLine)")
+                            dpg.add_text("- Credential Stealers (CryptUnprotectData, Login Data, Cookies)")
+                            dpg.add_text("- Malicious Droppers (PowerShell -enc, certutil, bitsadmin)")
 
                             dpg.add_spacing(count=2)
+                            dpg.add_text("OFFLINE ARCHITECTURE & AST ANALYSIS", color=(108, 175, 255))
+                            dpg.add_separator()
+                            dpg.add_text("Every archive is statically inspected offline. Detection", color=(160, 170, 185))
+                            dpg.add_text("rules search internal AST nodes, PE exports, and driver", color=(160, 170, 185))
+                            dpg.add_text("routines before any file is placed into the vault.", color=(160, 170, 185))
+
+                        # Right Box: AI Neural Classifier & External Webhooks
+                        with dpg.child_window(width=480, height=440, border=True):
+                            dpg.add_text("AI NEURAL CLASSIFIER (OPTIONAL)", color=(108, 175, 255))
+                            dpg.add_separator()
+
+                            ai_cfg = self.config.get("ai", {})
                             dpg.add_checkbox(
-                                label="Forward Telemetry to External Webhook",
+                                label="Enable AI Neural Categorization",
+                                tag="check_ai_enabled",
+                                default_value=ai_cfg.get("enabled", False)
+                            )
+
+                            current_prov = ai_cfg.get("provider", "gemini")
+                            prov_default = "Gemini API (Free Tier)"
+                            if current_prov == "openai":
+                                prov_default = "OpenAI (gpt-4o-mini)"
+                            elif current_prov == "ollama":
+                                prov_default = "Local Ollama (Offline)"
+
+                            dpg.add_text("AI Provider:", color=(160, 170, 185))
+                            dpg.add_combo(
+                                items=["Gemini API (Free Tier)", "OpenAI (gpt-4o-mini)", "Local Ollama (Offline)"],
+                                default_value=prov_default,
+                                tag="combo_ai_provider",
+                                width=440
+                            )
+
+                            dpg.add_text("API Key (masked, stored locally in config.json):", color=(160, 170, 185))
+                            dpg.add_input_text(
+                                tag="input_ai_key",
+                                default_value=ai_cfg.get("api_key", ""),
+                                password=True,
+                                width=440
+                            )
+
+                            with dpg.group(horizontal=True):
+                                with dpg.group():
+                                    dpg.add_text("Model Name:", color=(160, 170, 185))
+                                    dpg.add_input_text(
+                                        tag="input_ai_model",
+                                        default_value=ai_cfg.get("model", "gemini-1.5-flash"),
+                                        width=215
+                                    )
+                                with dpg.group():
+                                    dpg.add_text("Ollama URL (If local):", color=(160, 170, 185))
+                                    dpg.add_input_text(
+                                        tag="input_ollama_url",
+                                        default_value=ai_cfg.get("ollama_url", "http://localhost:11434"),
+                                        width=215
+                                    )
+
+                            dpg.add_spacing(count=2)
+                            dpg.add_text("N8N / EXTERNAL WEBHOOK (OPTIONAL)", color=(108, 175, 255))
+                            dpg.add_separator()
+                            dpg.add_checkbox(
+                                label="Relay Events to External Webhook",
                                 tag="check_webhook",
                                 default_value=self.config.get("webhook", {}).get("enabled", False)
                             )
-                            dpg.add_text("Webhook URL:")
+                            dpg.add_text("Webhook URL:", color=(160, 170, 185))
                             dpg.add_input_text(
                                 tag="input_webhook_url",
                                 default_value=self.config.get("webhook", {}).get("url", "http://localhost:5678/webhook/discord/source-eval"),
                                 width=440
                             )
-
-                            dpg.add_spacing(count=2)
-                            dpg.add_text("SUMMARY:", color=(108, 175, 255))
-                            dpg.add_text("No Node.js or n8n installation is required to use this software.")
-                            dpg.add_text("All downloads, static analysis, and sorting run natively in Python.")
 
                 # --- TAB 4: Ingestion Console ---
                 with dpg.tab(label="Ingestion Console"):

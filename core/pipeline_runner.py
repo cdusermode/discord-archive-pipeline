@@ -1,6 +1,6 @@
 """
 Pipeline Runner: Threaded Orchestrator for Discord Ingestion, Threat Scanning,
-and Storage Management with UI Event Dispatching.
+AI / Heuristic Triage, and Storage Management with UI Event Dispatching.
 """
 
 import os
@@ -16,6 +16,7 @@ from core.discord_client import DiscordClient
 from core.security_scanner import SecurityScanner
 from core.triage_engine import TriageEngine
 from core.storage_manager import StorageManager
+from core.ai_classifier import AIClassifier
 
 ARCHIVE_EXTENSIONS = {'.zip', '.rar', '.7z', '.tar', '.gz', '.dll', '.sys', '.exe', '.cpp', '.h', '.hpp'}
 
@@ -46,6 +47,7 @@ class PipelineRunner:
         self.client = DiscordClient(self.token)
         self.triage = TriageEngine()
         self.storage = StorageManager(config)
+        self.ai = AIClassifier(config)
 
         self.webhook_cfg = config.get("webhook", {})
         self.webhook_enabled = self.webhook_cfg.get("enabled", False)
@@ -98,6 +100,10 @@ class PipelineRunner:
     def _run_loop(self):
         self.on_log("INFO", f"Starting Ingestion Pipeline with {len(self.servers)} server(s)...")
         self.on_log("INFO", f"Storage Backend: {self.storage.mode.upper()} -> {self.storage.local_root if self.storage.mode == 'local' else 'Google Drive'}")
+        if self.ai.enabled:
+            self.on_log("INFO", f"AI Classification Engine: ACTIVE ({self.ai.provider.upper()} - {self.ai.model})")
+        else:
+            self.on_log("INFO", "Sorting Engine: Deep Binary & Source Signature Analyzer (Offline)")
 
         # Validate token
         valid, auth_name = self.client.test_connection()
@@ -196,16 +202,30 @@ class PipelineRunner:
                                 # 2. Deep In-Archive Threat Inspection
                                 verdict, threats, namelist = SecurityScanner.scan_archive(tmp_path)
 
-                                # 3. Taxonomy Classification
+                                # 3. Optional AI Neural Classification
+                                ai_decision = None
+                                if self.ai.enabled:
+                                    ai_decision = self.ai.classify_codebase(
+                                        filename=fname,
+                                        file_tree=namelist,
+                                        code_snippets="",
+                                        message_context=msg.get("content", "")
+                                    )
+
+                                # 4. Taxonomy Classification (AI or Deep Binary Inspection)
                                 msg_payload = {
-                                    "content": (msg.get("content", "") + " " + fname + " " + " ".join(namelist)).strip(),
+                                    "content": (msg.get("content", "") + " " + fname).strip(),
                                     "timestamp": msg.get("timestamp"),
                                     "server_name": s_name,
                                     "channel_name": cname,
                                     "author_name": msg.get("author", {}).get("username", "Unknown"),
                                     "message_id": msg.get("id")
                                 }
-                                triage_meta = self.triage.evaluate(msg_payload)
+                                triage_meta = self.triage.evaluate(
+                                    payload=msg_payload,
+                                    namelist=namelist,
+                                    ai_decision=ai_decision
+                                )
                                 dest_folder = triage_meta.get("decision", {}).get("destination_folder", "Other/Utilities/")
 
                                 if verdict in ("QUARANTINE_VIRUS", "SUSPICIOUS_STEALER"):
@@ -213,10 +233,13 @@ class PipelineRunner:
                                     self.on_log("THREAT", f"QUARANTINE: {fname} -> Threats: {'; '.join(threats[:2])}")
                                     self.metrics["quarantined"] += 1
                                 else:
-                                    self.on_log("CLEAN", f"CLEAN: {fname} -> Target: {dest_folder}")
+                                    if ai_decision:
+                                        self.on_log("CLEAN", f"AI Sorted: {fname} -> {dest_folder} (Confidence: {ai_decision.get('confidence', 1.0):.2f})")
+                                    else:
+                                        self.on_log("CLEAN", f"Heuristic Sorted: {fname} -> {dest_folder}")
                                     self.metrics["clean_saved"] += 1
 
-                                # 4. Storage Persistence (Local Disk OR Google Drive)
+                                # 5. Storage Persistence (Local Disk OR Google Drive)
                                 store_result = self.storage.store_file(
                                     source_path=tmp_path,
                                     destination_subpath=dest_folder,
@@ -230,7 +253,7 @@ class PipelineRunner:
                                     self.on_log("INFO", f"Deduplicated by SHA-256: {fname}")
                                     self.metrics["duplicates_skipped"] += 1
                                 elif store_result.get("status") == "SUCCESS":
-                                    self.on_log("SAVED", f"Successfully stored [{store_result.get('backend').upper()}]: {store_result.get('filename')}")
+                                    self.on_log("SAVED", f"Stored [{store_result.get('backend').upper()}]: {store_result.get('filename')}")
 
                                 self._forward_webhook(triage_meta)
                                 self._emit_metrics()

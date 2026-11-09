@@ -1,13 +1,16 @@
 """
 Triage Engine: Multi-Game Source Evaluation & Security Isolation.
-Categorizes into clean directories:
-- Games/Fortnite/External/Kernel, Games/Fortnite/External/UserMode, Games/Fortnite/Internal/DLL, Games/Fortnite/Internal/Injectors
-- Tools/Drivers/ (Kernel drivers for EAC, BattlEye, Vanguard, General)
-- Tools/Mappers/ (KDMapper, VDM, DrvMap, General)
-- Tools/Injectors/
-- Tools/Dumpers/
-- Spoofer/Universal/ (Temp / Perm)
-- Quarantine/Detected_Viruses/, Quarantine/Suspicious_Stealers/ (*.quarantined)
+Features:
+- Seamless integration with AIClassifier (Gemini / OpenAI / Ollama)
+- Deep code & binary signature analysis (DriverEntry, kdmapper, CreateRemoteThread, offsets)
+- Clean directory routing:
+  - Games/Fortnite/External/Kernel, Games/Fortnite/External/UserMode, Games/Fortnite/Internal/DLL, Games/Fortnite/Internal/Injectors
+  - Tools/Drivers/ (Kernel drivers for EAC, BattlEye, Vanguard, General)
+  - Tools/Mappers/ (KDMapper, VDM, DrvMap, General)
+  - Tools/Injectors/
+  - Tools/Dumpers/
+  - Spoofer/Universal/ (Temp / Perm)
+  - Quarantine/Detected_Viruses/, Quarantine/Suspicious_Stealers/ (*.quarantined)
 """
 
 import re
@@ -24,37 +27,37 @@ GAME_RULES = {
         "engine": "UE 5.4+",
         "ac_tier": "Tier 1",
         "max_offset_days": 90,
-        "keywords": ["fortnite", "fn", "chapter 5", "chapter 6", "unreal 5", "ue5", "crisis", "slotted", "proswapper", "galaxy", "eac", "battleye"]
+        "keywords": ["fortnite", "fn", "chapter 5", "chapter 6", "unreal 5", "ue5", "crisis", "slotted", "proswapper", "galaxy", "uworld", "gnames", "fortpawn"]
     },
     "CounterStrike_CS2": {
         "engine": "Source 2",
         "ac_tier": "Tier 2",
         "max_offset_days": 60,
-        "keywords": ["cs2", "counterstrike2", "counter-strike 2", "source 2", "client.dll", "schema", "vacnet", "cs2-external", "source2gen", "larpware_cs2", "cs2-internal"]
+        "keywords": ["cs2", "counterstrike2", "counter-strike 2", "source 2", "client.dll", "schema", "vacnet", "cs2-external", "source2gen", "larpware_cs2", "cs2-internal", "dwlocalplayerpawn", "dwentitylist"]
     },
     "CounterStrike_CSGO": {
         "engine": "Source 1",
         "ac_tier": "Legacy",
         "max_offset_days": None,
-        "keywords": ["csgo", "cs:go", "counter-strike global offensive", "source 1", "source1", "velocity", "osiris", "aimtux", "csgo-simple", "csgosimple", "gladiatorcheatz", "fuzion", "weave", "pandora", "onetap", "gamesense"]
+        "keywords": ["csgo", "cs:go", "counter-strike global offensive", "source 1", "source1", "velocity", "osiris", "aimtux", "csgo-simple", "csgosimple", "gladiatorcheatz", "fuzion", "weave", "pandora", "onetap", "gamesense", "dwclientstate"]
     },
     "Rust": {
         "engine": "Unity",
         "ac_tier": "Tier 1",
         "max_offset_days": 60,
-        "keywords": ["rust", "facepunch", "cloak-rust", "rust-external", "rustclient", "eac rust"]
+        "keywords": ["rust", "facepunch", "cloak-rust", "rust-external", "rustclient", "eac rust", "baseplayer", "basenetworkable"]
     },
     "Roblox": {
         "engine": "Roblox",
         "ac_tier": "Tier 2",
         "max_offset_days": None,
-        "keywords": ["roblox", "fflag", "fflag_dumper", "rbx"]
+        "keywords": ["roblox", "fflag", "fflag_dumper", "rbx", "robloxplayerbeta"]
     },
     "Grand_Theft_Auto_V": {
         "engine": "RAGE",
         "ac_tier": "Tier 3",
         "max_offset_days": None,
-        "keywords": ["gta5", "gtav", "gta v", "fivem", "rockstar", "gosth_fivem"]
+        "keywords": ["gta5", "gtav", "gta v", "fivem", "rockstar", "gosth_fivem", "citizenfx"]
     },
     "Rainbow_Six_Siege": {
         "engine": "AnvilNext",
@@ -78,7 +81,7 @@ GAME_RULES = {
         "engine": "JVM",
         "ac_tier": "Versioned",
         "max_offset_days": None,
-        "keywords": ["minecraft java", "fabric", "forge", "mixin", "alienclient", "1.8.9", "1.20", "1.21", "jvm"]
+        "keywords": ["minecraft java", "fabric", "forge", "mixin", "alienclient", "1.8.9", "1.20", "1.21", "jvm", "entityplayersp"]
     },
     "Minecraft_Bedrock": {
         "engine": "C++ / UWP",
@@ -147,29 +150,32 @@ class TriageEngine:
             "persistence": persistence
         }
 
-    def classify_tool_or_cheat(self, content: str) -> Tuple[str, str, str, str]:
+    def classify_tool_or_cheat(self, content: str, namelist: Optional[List[str]] = None) -> Tuple[str, str, str, str]:
         """
-        Classifies content into: (target_game, category, tier_path, subtype)
+        Classifies content and archive file tree into: (target_game, category, target_folder, subtype)
         """
         lower = content.lower()
+        files = [f.lower() for f in (namelist or [])]
+        all_text = lower + " " + " ".join(files)
 
         # 1. Detect Game Target
         matched_game = "Other"
         for game_id, rules in GAME_RULES.items():
-            if any(k in lower for k in rules["keywords"]):
+            if any(k in all_text for k in rules["keywords"]):
                 matched_game = game_id
                 break
 
         # 2. Check for Independent Tools / Mappers / Drivers
-        is_mapper = any(k in lower for k in ["mapper", "kdmapper", "vdm", "drvmap", "kdu", "superultraamazingtungtungmapper", "map driver"])
-        is_driver = (any(k in lower for k in [".sys", "driver", "byovd", "kernel driver", "kernel-driver", "rootkit"]) and not is_mapper)
-        is_injector = any(k in lower for k in ["injector", "inject", "manualmap", "dll_injector", "loader_for_developer", "injc"])
-        is_dumper = any(k in lower for k in ["dumper", "dumpspace", "uedumper", "source2gen", "cs2dumper", "il2cppdumper"])
-        is_re = any(k in lower for k in ["ida-pro", "idapro", "ghidra", "gamehackingacademy", "valveresourceformat", "imrefl", "luckywarereverse"])
-        is_gui = any(k in lower for k in ["fgui", "zgui", "nuklear", "imgui-menu", "imgui-base", "imgui"])
-        is_auth = any(k in lower for k in ["cpp-auth", "unkauthproject", "keyauth", "auth-system"])
+        has_sys_file = any(f.endswith(".sys") for f in files)
+        is_mapper = any(k in all_text for k in ["mapper", "kdmapper", "vdm", "drvmap", "kdu", "superultraamazingtungtungmapper", "map driver", "iqvw64e"])
+        is_driver = (has_sys_file or any(k in all_text for k in ["driver", "driverentry", "iocreatedevice", "byovd", "kernel driver", "kernel-driver", "rootkit"])) and not is_mapper
+        is_injector = any(k in all_text for k in ["injector", "inject", "manualmap", "dll_injector", "createremotethread", "loader_for_developer", "injc"])
+        is_dumper = any(k in all_text for k in ["dumper", "dumpspace", "uedumper", "source2gen", "cs2dumper", "il2cppdumper"])
+        is_re = any(k in all_text for k in ["ida-pro", "idapro", "ghidra", "gamehackingacademy", "valveresourceformat", "imrefl", "luckywarereverse"])
+        is_gui = any(k in all_text for k in ["fgui", "zgui", "nuklear", "imgui-menu", "imgui-base", "imgui"])
+        is_auth = any(k in all_text for k in ["cpp-auth", "unkauthproject", "keyauth", "auth-system"])
 
-        # Drivers & Mappers go to dedicated Tools section
+        # Dedicated Tools routing (Drivers & Mappers belong in Tools)
         if is_mapper:
             return matched_game, "Tools", "Tools/Mappers/", "Mappers"
         if is_driver:
@@ -190,9 +196,10 @@ class TriageEngine:
             return "Other", "Tools", "Tools/Auth_Systems/", "Auth_Systems"
 
         # 3. Game Cheat Architecture: Kernel vs UserMode / Internal vs External
-        is_kernel = any(k in lower for k in ["kernel", "ioctl", "physicalmemory", "byovd", "vmm", "dma", "cr3", "rwmem"])
-        is_internal = any(k in lower for k in ["internal", "vmt", "hook", "minhook", "present", "dllmain", ".dll"])
-        is_usermode = any(k in lower for k in ["overlay", "esp", "aimbot", "radar", "pixel", "yolo", "usermode", "user mode", "external"])
+        has_dll_file = any(f.endswith(".dll") for f in files)
+        is_internal = has_dll_file or any(k in all_text for k in ["internal", "vmt", "hook", "minhook", "dllmain", "kiero", "present hook"])
+        is_kernel = any(k in all_text for k in ["kernel", "ioctl", "physicalmemory", "byovd", "vmm", "dma", "cr3", "rwmem"])
+        is_usermode = any(k in all_text for k in ["overlay", "esp", "aimbot", "radar", "pixel", "yolo", "usermode", "user mode", "external"])
 
         if matched_game != "Other":
             if is_internal:
@@ -212,23 +219,47 @@ class TriageEngine:
 
         return "Other", "Utility", "Other/Utilities/", "General_Utility"
 
-    def evaluate(self, payload: Dict[str, Any], raw_bytes: bytes = b"") -> Dict[str, Any]:
+    def evaluate(
+        self,
+        payload: Dict[str, Any],
+        raw_bytes: bytes = b"",
+        namelist: Optional[List[str]] = None,
+        ai_decision: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         content = payload.get("content", "")
         post_timestamp = payload.get("timestamp", datetime.now(timezone.utc).isoformat())
 
         sec_status, threats = self.scan_for_malware(content, raw_bytes)
         spoofer_info = self.classify_spoofer(content)
-        game_id, category, target_folder, subtype = self.classify_tool_or_cheat(content)
 
-        # Determine Destination Subfolder
+        # 1. Check Threat Quarantine First (Zero-Tolerance)
         if sec_status in ("QUARANTINE_VIRUS", "SUSPICIOUS_STEALER"):
             action = "DOWNLOAD_QUARANTINE"
             dest_folder = f"Quarantine/{'Detected_Viruses' if sec_status == 'QUARANTINE_VIRUS' else 'Suspicious_Stealers'}/"
+            game_id = "Threat_Quarantined"
+            category = "Quarantine"
+            subtype = sec_status
+
+        # 2. Check Spoofer
         elif spoofer_info:
             action = "DOWNLOAD_CLEAN"
             dest_folder = f"Spoofer/{spoofer_info['target']}/{spoofer_info['persistence']}/"
+            game_id = "Universal"
+            category = "Spoofer"
+            subtype = spoofer_info['persistence']
+
+        # 3. AI Classifier Decision (If enabled and confident)
+        elif ai_decision and ai_decision.get("destination_folder") and ai_decision.get("confidence", 0) >= 0.7:
+            action = "DOWNLOAD_CLEAN"
+            dest_folder = ai_decision.get("destination_folder")
+            game_id = ai_decision.get("target_game", "Other")
+            category = ai_decision.get("category", "Tools")
+            subtype = "AI_Classified"
+
+        # 4. Deep Heuristic & Code Signature Analyzer
         else:
             action = "DOWNLOAD_CLEAN"
+            game_id, category, target_folder, subtype = self.classify_tool_or_cheat(content, namelist)
             dest_folder = target_folder
 
         metadata = {
@@ -238,6 +269,7 @@ class TriageEngine:
             "category": category,
             "subtype": subtype,
             "spoofer": spoofer_info,
+            "ai_decision": ai_decision,
             "security": {
                 "status": sec_status,
                 "threats": threats

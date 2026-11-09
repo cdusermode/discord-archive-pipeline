@@ -36,6 +36,13 @@
     "quarantine_suffix": ".quarantined",
     "deduplicate_sha256": true
   },
+  "ai": {
+    "enabled": false,
+    "provider": "gemini",
+    "api_key": "",
+    "model": "gemini-1.5-flash",
+    "ollama_url": "http://localhost:11434"
+  },
   "webhook": {
     "enabled": false,
     "url": "http://localhost:5678/webhook/discord/source-eval"
